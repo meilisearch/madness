@@ -1,13 +1,8 @@
 use std::fmt;
-use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
+use std::net::Ipv4Addr;
 
 use crate::error::Error;
-
-pub struct PTRRecord(pub(crate) String);
-pub struct A(pub(crate) Ipv4Addr);
-pub struct AAAA(pub(crate) Ipv6Addr);
-pub struct TXT(pub(crate) Vec<String>);
 
 pub enum RRType {
     A = 0x1,
@@ -27,6 +22,7 @@ pub enum RRType {
     MX = 0xF,
     TXT = 0x10,
     AAAA = 0x1c,
+    SRV = 0x21,
 }
 
 pub enum QClass {
@@ -41,6 +37,7 @@ pub struct PacketBuilder {
     answers: Vec<Vec<u8>>,
 }
 
+// Builder for mDNS packets
 impl PacketBuilder {
     pub fn new() -> Self {
         Self {
@@ -49,15 +46,60 @@ impl PacketBuilder {
         }
     }
 
-    pub fn add_question(&mut self, name: &str, qtype: RRType) -> &mut Self {
+    /// Add a question to the packet
+    pub fn add_question(&mut self, qname: &str, qtype: RRType) -> &mut Self {
         let mut buffer = Vec::new();
-        append_qname(&mut buffer, name.as_bytes());
+        append_qname(&mut buffer, qname.as_bytes());
         append_u16(&mut buffer, qtype as u16);
         append_u16(&mut buffer, QClass::IN as u16);
         self.questions.push(buffer);
         self
     }
 
+    pub fn add_srv(
+        &mut self,
+        service_name: &str,
+        port: u16,
+        ttl: Duration,
+        priority: u16,
+        weight: u16,
+        target: &str,
+    ) -> &mut Self {
+        let mut buffer = Vec::new();
+        append_qname(&mut buffer, service_name.as_bytes());
+        let ttl_secs = duration_to_secs(ttl);
+        append_u32(&mut buffer, ttl_secs);
+        append_u16(&mut buffer, QClass::IN as u16);
+        append_u16(&mut buffer, RRType::SRV as u16);
+        append_u16(&mut buffer, priority);
+        append_u16(&mut buffer, weight);
+        append_u16(&mut buffer, port);
+        append_qname(&mut buffer, target.as_bytes());
+        self.answers.push(buffer);
+        self
+    }
+
+    pub fn add_a(
+        &mut self,
+        name: &str,
+        addr: Ipv4Addr,
+        ttl: Duration,
+    ) -> &mut Self {
+        let mut buffer = Vec::new();
+        append_qname(&mut buffer, name.as_bytes());
+        append_u16(&mut buffer, RRType::A as u16);
+        append_u16(&mut buffer, QClass::IN as u16 | 0x8000);
+        let ttl_secs = duration_to_secs(ttl);
+        append_u32(&mut buffer, ttl_secs);
+        let mut buf = Vec::new();
+        append_qname(&mut buf, addr.to_string().as_bytes());
+        append_u16(&mut buffer, buf.len() as u16);
+        buffer.extend_from_slice(&buf);
+        self.answers.push(buffer);
+        self
+    }
+
+    /// Add txt records to the packet answers
     pub fn add_txt<'a>(
         &mut self,
         service_name: &str,
@@ -86,6 +128,7 @@ impl PacketBuilder {
         self
     }
 
+    /// Build an answer packet
     pub fn build_answer(&self, id: u16) -> Vec<u8> {
         let mut out = Vec::new();
 
@@ -112,6 +155,7 @@ impl PacketBuilder {
         out
     }
 
+    /// Build an question packet
     pub fn build_question(&self, id: u16) -> Vec<u8> {
         let mut out = Vec::new();
 
