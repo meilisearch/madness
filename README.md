@@ -1,6 +1,6 @@
-# Tokio-mdns
+# Madness
 
-Tokio-mdns is a library for mDNS service discovery and advertisement. Checkout example for usage.
+Madness is a library for mDNS service discovery and advertisement. Checkout example for usage.
 
 
 ## Acknowlegement
