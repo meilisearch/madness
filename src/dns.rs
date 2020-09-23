@@ -67,14 +67,17 @@ impl PacketBuilder {
     ) -> &mut Self {
         let mut buffer = Vec::new();
         append_qname(&mut buffer, service_name.as_bytes());
+        append_u16(&mut buffer, RRType::SRV as u16);
+        append_u16(&mut buffer, QClass::IN as u16);
         let ttl_secs = duration_to_secs(ttl);
         append_u32(&mut buffer, ttl_secs);
-        append_u16(&mut buffer, QClass::IN as u16);
-        append_u16(&mut buffer, RRType::SRV as u16);
+        let mut buf = Vec::new();
+        append_qname(&mut buf, target.as_bytes());
+        append_u16(&mut buffer, 6 + buf.len() as u16);
         append_u16(&mut buffer, priority);
         append_u16(&mut buffer, weight);
         append_u16(&mut buffer, port);
-        append_qname(&mut buffer, target.as_bytes());
+        buffer.extend_from_slice(&buf);
         self.answers.push(buffer);
         self
     }
@@ -91,10 +94,8 @@ impl PacketBuilder {
         append_u16(&mut buffer, QClass::IN as u16 | 0x8000);
         let ttl_secs = duration_to_secs(ttl);
         append_u32(&mut buffer, ttl_secs);
-        let mut buf = Vec::new();
-        append_qname(&mut buf, addr.to_string().as_bytes());
-        append_u16(&mut buffer, buf.len() as u16);
-        buffer.extend_from_slice(&buf);
+        append_u16(&mut buffer, 4);
+        append_u32(&mut buffer, addr.into());
         self.answers.push(buffer);
         self
     }
