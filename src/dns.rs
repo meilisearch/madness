@@ -59,13 +59,13 @@ pub enum Answer<'a> {
 }
 
 impl<'a> Answer<'a> {
-    fn append_bytes(self, out: &mut Vec<u8>) {
+    fn append_bytes(&self, out: &mut Vec<u8>) {
         match self {
             Self::PTR { name, ptr, ttl } => {
                 append_qname(out, name.as_bytes());
                 append_u16(out, RRType::PTR as u16);
                 append_u16(out, QClass::IN as u16 | 0x8000);
-                let ttl_secs = duration_to_secs(ttl);
+                let ttl_secs = duration_to_secs(*ttl);
                 append_u32(out, ttl_secs);
                 append_u16(out, ptr.as_bytes().len() as u16 + 2);
                 append_qname(out, ptr.as_bytes());
@@ -79,27 +79,27 @@ impl<'a> Answer<'a> {
                 port,
             } => {
                 append_qname(out, name.as_bytes());
-                let ttl_secs = duration_to_secs(ttl);
+                let ttl_secs = duration_to_secs(*ttl);
                 append_u16(out, RRType::SRV as u16);
                 append_u16(out, QClass::IN as u16);
                 append_u32(out, ttl_secs);
                 append_u16(out, 2 + 2 + 2 + target.len() as u16 + 2);
-                append_u16(out, priority);
-                append_u16(out, weight);
-                append_u16(out, port);
+                append_u16(out, *priority);
+                append_u16(out, *weight);
+                append_u16(out, *port);
                 append_qname(out, target.as_bytes());
             }
             Self::A { addr, name, ttl } => {
                 append_qname(out, name.as_bytes());
                 append_u16(out, RRType::A as u16);
                 append_u16(out, QClass::IN as u16);
-                let ttl_secs = duration_to_secs(ttl);
+                let ttl_secs = duration_to_secs(*ttl);
                 append_u32(out, ttl_secs);
                 append_u16(out, 4);
-                append_u32(out, addr.into());
+                append_u32(out, *addr.into());
             }
             Self::TXT { name, ttl, entries } => {
-                let ttl_secs = duration_to_secs(ttl);
+                let ttl_secs = duration_to_secs(*ttl);
                 append_txt_record(out, name, ttl_secs, entries.iter().map(|e| *e)).unwrap();
             }
         }
@@ -307,9 +307,15 @@ impl<'a> PacketBuilder<'a> {
 
     /// Builds the packet and returns the bytes for that packet.
     pub fn build(self) -> Vec<u8> {
-        todo!();
+        let size = self.header.byte_size()
+            + self.questions.iter().map(|q| q.byte_size()).sum::<usize>()
+            + self.answers.iter().map(|a| a.bytes_size()).sum::<usize>();
+        let mut out = Vec::with_capacity(size);
+        self.header.append_bytes(&mut out);
+        self.questions.iter().for_each(|q| q.append_bytes(&mut out));
+        self.answers.iter().for_each(|a| a.append_bytes(&mut out));
+        out
     }
-
 }
 
 fn append_u16(out: &mut Vec<u8>, value: u16) {
