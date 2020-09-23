@@ -115,10 +115,10 @@ impl MdnsService {
                 let _ = interval.tick().await;
                 // stop service dicovery when the sender is dropped
                 match orx.try_recv() {
-                    Ok(_) => {
+                    Err(oneshot::error::TryRecvError::Closed) => break,
+                    _ => {
                         let _ = sender.send(service.clone()).await;
                     }
-                    Err(_) => break,
                 }
             }
         });
@@ -134,7 +134,6 @@ impl MdnsService {
         loop {
             while !self.send_buffers.is_empty() {
                 let to_send = self.send_buffers.remove(0);
-                println!("sending");
 
                 match self
                     .socket
