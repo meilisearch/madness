@@ -1,9 +1,8 @@
 use std::fmt;
-use std::time::Duration;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
-use crate::error::Error;
-
+#[derive(Debug, Copy, Clone)]
 pub enum RRType {
     A = 0x1,
     NS = 0x2,
@@ -25,6 +24,7 @@ pub enum RRType {
     SRV = 0x21,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum QClass {
     IN = 0x1,
     CS = 0x2,
@@ -32,155 +32,284 @@ pub enum QClass {
     HS = 0x4,
 }
 
-pub struct PacketBuilder {
-    questions: Vec<Vec<u8>>,
-    answers: Vec<Vec<u8>>,
+pub enum Answer<'a> {
+    PTR {
+        name: &'a str,
+        ptr: &'a str,
+        ttl: Duration,
+    },
+    SRV {
+        port: u16,
+        priority: u16,
+        weight: u16,
+        target: &'a str,
+        ttl: Duration,
+        name: &'a str,
+    },
+    A {
+        addr: Ipv4Addr,
+        name: &'a str,
+        ttl: Duration,
+    },
+    TXT {
+        entries: &'a [&'a str],
+        ttl: Duration,
+        name: &'a str,
+    },
+}
+
+impl<'a> Answer<'a> {
+    fn append_bytes(self, out: &mut Vec<u8>) {
+        match self {
+            Self::PTR { name, ptr, ttl } => {
+                append_qname(out, name.as_bytes());
+                append_u16(out, RRType::PTR as u16);
+                append_u16(out, QClass::IN as u16 | 0x8000);
+                let ttl_secs = duration_to_secs(ttl);
+                append_u32(out, ttl_secs);
+                append_u16(out, ptr.as_bytes().len() as u16 + 2);
+                append_qname(out, ptr.as_bytes());
+            }
+            Self::SRV {
+                name,
+                ttl,
+                priority,
+                target,
+                weight,
+                port,
+            } => {
+                append_qname(out, name.as_bytes());
+                let ttl_secs = duration_to_secs(ttl);
+                append_u16(out, RRType::SRV as u16);
+                append_u16(out, QClass::IN as u16);
+                append_u32(out, ttl_secs);
+                append_u16(out, 2 + 2 + 2 + target.len() as u16 + 2);
+                append_u16(out, priority);
+                append_u16(out, weight);
+                append_u16(out, port);
+                append_qname(out, target.as_bytes());
+            }
+            Self::A { addr, name, ttl } => {
+                append_qname(out, name.as_bytes());
+                append_u16(out, RRType::A as u16);
+                append_u16(out, QClass::IN as u16);
+                let ttl_secs = duration_to_secs(ttl);
+                append_u32(out, ttl_secs);
+                append_u16(out, 4);
+                append_u32(out, addr.into());
+            }
+            Self::TXT { name, ttl, entries } => {
+                let ttl_secs = duration_to_secs(ttl);
+                append_txt_record(out, name, ttl_secs, entries.iter().map(|e| *e)).unwrap();
+            }
+        }
+    }
+
+    fn bytes_size(&self) -> usize {
+        match self {
+            Answer::PTR { name, ptr, .. } => name.as_bytes().len() + ptr.as_bytes().len() + 14,
+            Answer::SRV { target, name, .. } => name.as_bytes().len() +  target.as_bytes().len() + 20,
+            Answer::A { name, .. } => name.as_bytes().len() + 16,
+            Answer::TXT { entries, ttl, name } => name.as_bytes().len() + entries.iter().map(|e| e.as_bytes().len() + 3).sum::<usize>() + 12,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct PacketHeader {
+    id: u16,
+    flags: u16,
+    qd_count: u16,
+    an_count: u16,
+    ns_count: u16,
+    ar_count: u16,
+}
+
+impl PacketHeader {
+    pub fn set_id(&mut self, id: u16) -> &mut Self {
+        self.id = id;
+        self
+    }
+
+    pub fn id(&self) -> u16 {
+        self.id
+    }
+
+    pub fn set_qr(&mut self, set: bool) -> &mut Self {
+        self.flags = ((-(set as i16) ^ self.flags as i16) & (1 << 15)) as u16;
+        self
+    }
+
+    pub fn qr(&self) -> bool {
+        self.flags & 1 << 15 != 0
+    }
+
+    pub fn set_opcode(&mut self, code: OpCode) -> &mut Self {
+        // clear previous value
+        self.flags &= 0x87ff;
+        // set new value
+        self.flags |= (code as u16) << 11;
+        self
+    }
+
+    pub fn set_aa(&mut self, set: bool) -> &mut Self {
+        self.flags = ((-(set as i16) ^ self.flags as i16) & (1 << 10)) as u16;
+        self
+    }
+
+    pub fn aa(&self) -> bool {
+        self.flags & 1 << 10 != 0
+    }
+
+    pub fn set_tc(&mut self, set: bool) -> &mut Self {
+        self.flags = ((-(set as i16) ^ self.flags as i16) & (1 << 9)) as u16;
+        self
+    }
+
+    pub fn tc(&self) -> bool {
+        self.flags & 1 << 9 != 0
+    }
+
+    pub fn set_rd(&mut self, set: bool) -> &mut Self {
+        self.flags = ((-(set as i16) ^ self.flags as i16) & (1 << 8)) as u16;
+        self
+    }
+
+    pub fn rd(&self) -> bool {
+        self.flags & 1 << 8 != 0
+    }
+
+    pub fn set_ra(&mut self, set: bool) -> &mut Self {
+        self.flags = ((-(set as i16) ^ self.flags as i16) & (1 << 7)) as u16;
+        self
+    }
+
+    pub fn ra(&self) -> bool {
+        self.flags & 1 << 7 != 0
+    }
+
+    pub fn set_rcode(&mut self, code: RCode) -> &mut Self {
+        // clear previous value
+        self.flags &= 0xfff8;
+        // set new value
+        self.flags |= code as u16;
+        self
+    }
+
+    pub fn set_an_count(&mut self, count: u16) -> &mut Self {
+        self.an_count = count;
+        self
+    }
+    pub fn set_ns_count(&mut self, count: u16) -> &mut Self {
+        self.ns_count = count;
+        self
+    }
+    pub fn set_ar_count(&mut self, count: u16) -> &mut Self {
+        self.ar_count = count;
+        self
+    }
+    pub fn an_count(self) -> u16 {
+        self.an_count
+    }
+    pub fn ns_count(self) -> u16 {
+        self.ns_count
+    }
+    pub fn ar_count(self) -> u16 {
+        self.ar_count
+    }
+
+    pub fn byte_size(&self) -> usize {
+        12
+    }
+
+    fn append_bytes(&self, out: &mut Vec<u8>) {
+        append_u16(out, self.id);
+        append_u16(out, self.flags);
+        append_u16(out, self.qd_count);
+        append_u16(out, self.an_count);
+        append_u16(out, self.ns_count);
+        append_u16(out, self.ar_count);
+    }
+}
+
+pub enum OpCode {
+    QUERY = 0x0,
+    IQUERY = 0x2,
+    STATUS = 0x3,
+}
+
+pub enum RCode {
+    NoError = 0,
+    FormatError = 1,
+    ServerFailure = 2,
+    NameError = 3,
+    NotImplemmented = 4,
+    Refused = 5,
+}
+
+pub struct Question<'a> {
+    pub name: &'a str,
+    pub qtype: RRType,
+    pub qclass: QClass,
+}
+
+impl<'a> Question<'a> {
+    fn append_bytes(&self, out: &mut Vec<u8>) {
+        append_qname(out, self.name.as_bytes());
+        append_u16(out, self.qtype as u16);
+        append_u16(out, self.qclass as u16);
+    }
+
+    fn byte_size(&self) -> usize {
+        2 + 2 + self.name.as_bytes().len() + 2
+    }
+}
+
+pub struct PacketBuilder<'a> {
+    header: PacketHeader,
+    questions: Vec<Question<'a>>,
+    answers: Vec<Answer<'a>>,
 }
 
 // Builder for mDNS packets
-impl PacketBuilder {
+impl<'a> PacketBuilder<'a> {
+    /// Creates a new instance of a packet builder.
     pub fn new() -> Self {
         Self {
+            header: PacketHeader::default(),
             questions: Vec::new(),
             answers: Vec::new(),
         }
     }
 
+    /// Returns a reference to the header of the packet.
+    pub fn header(&self) -> &PacketHeader {
+        &self.header
+    }
+
+    /// Returns a mutable reference to the header of the packet.
+    pub fn header_mut(&mut self) -> &mut PacketHeader {
+        &mut self.header
+    }
+
     /// Add a question to the packet
-    pub fn add_question(&mut self, qname: &str, qtype: RRType) -> &mut Self {
-        let mut buffer = Vec::new();
-        append_qname(&mut buffer, qname.as_bytes());
-        append_u16(&mut buffer, qtype as u16);
-        append_u16(&mut buffer, QClass::IN as u16);
-        self.questions.push(buffer);
+    pub fn add_question(&mut self, question: Question<'a>) -> &mut Self {
+        self.questions.push(question);
         self
     }
 
-    pub fn add_srv(
-        &mut self,
-        service_name: &str,
-        port: u16,
-        ttl: Duration,
-        priority: u16,
-        weight: u16,
-        target: &str,
-    ) -> &mut Self {
-        let mut buffer = Vec::new();
-        append_qname(&mut buffer, service_name.as_bytes());
-        let ttl_secs = duration_to_secs(ttl);
-        append_u32(&mut buffer, ttl_secs);
-        append_u16(&mut buffer, QClass::IN as u16);
-        append_u16(&mut buffer, RRType::SRV as u16);
-        append_u16(&mut buffer, priority);
-        append_u16(&mut buffer, weight);
-        append_u16(&mut buffer, port);
-        append_qname(&mut buffer, target.as_bytes());
-        self.answers.push(buffer);
+    /// Adds an answer to the packet
+    pub fn add_answer(&mut self, answer: Answer<'a>) -> &mut Self {
+        self.answers.push(answer);
         self
     }
 
-    pub fn add_a(
-        &mut self,
-        name: &str,
-        addr: Ipv4Addr,
-        ttl: Duration,
-    ) -> &mut Self {
-        let mut buffer = Vec::new();
-        append_qname(&mut buffer, name.as_bytes());
-        append_u16(&mut buffer, RRType::A as u16);
-        append_u16(&mut buffer, QClass::IN as u16 | 0x8000);
-        let ttl_secs = duration_to_secs(ttl);
-        append_u32(&mut buffer, ttl_secs);
-        let mut buf = Vec::new();
-        append_qname(&mut buf, addr.to_string().as_bytes());
-        append_u16(&mut buffer, buf.len() as u16);
-        buffer.extend_from_slice(&buf);
-        self.answers.push(buffer);
-        self
+    /// Builds the packet and returns the bytes for that packet.
+    pub fn build(self) -> Vec<u8> {
+        todo!();
     }
 
-    /// Add txt records to the packet answers
-    pub fn add_txt<'a>(
-        &mut self,
-        service_name: &str,
-        txt: impl Iterator<Item = &'a str>,
-        ttl: Duration,
-    ) -> Result<&mut Self, Error> {
-        let mut buffer = Vec::new();
-        let ttl_secs = duration_to_secs(ttl);
-        append_txt_record(&mut buffer, service_name, ttl_secs, txt)?;
-        Ok(self)
-    }
-
-    /// adds a ptr answer to the Response
-    pub fn add_ptr(&mut self, service_name: &str, ptr: &str, ttl: Duration) -> &mut Self {
-        let mut buffer = Vec::new();
-        append_qname(&mut buffer, service_name.as_bytes());
-        append_u16(&mut buffer, RRType::PTR as u16);
-        append_u16(&mut buffer, QClass::IN as u16 | 0x8000);
-        let ttl_secs = duration_to_secs(ttl);
-        append_u32(&mut buffer, ttl_secs);
-        let mut buf = Vec::new();
-        append_qname(&mut buf, ptr.as_bytes());
-        append_u16(&mut buffer, buf.len() as u16);
-        buffer.extend_from_slice(&buf);
-        self.answers.push(buffer);
-        self
-    }
-
-    /// Build an answer packet
-    pub fn build_answer(&self, id: u16) -> Vec<u8> {
-        let mut out = Vec::new();
-
-        // Program-generated transaction ID; unused by our implementation.
-        append_u16(&mut out, id);
-        // 0x0 flag for a regular query.
-        append_u16(&mut out, 0x8400);
-
-        // Number of questions.
-        append_u16(&mut out, 0x0);
-
-        // Number of answers, authorities, and additionals.
-        append_u16(&mut out, self.answers.len() as u16);
-        append_u16(&mut out, 0x0);
-        append_u16(&mut out, 0x0);
-
-        for question in &self.questions {
-            out.extend_from_slice(&question);
-        }
-
-        for answer in &self.answers {
-            out.extend_from_slice(&answer);
-        }
-        out
-    }
-
-    /// Build an question packet
-    pub fn build_question(&self, id: u16) -> Vec<u8> {
-        let mut out = Vec::new();
-
-        // Program-generated transaction ID; unused by our implementation.
-        append_u16(&mut out, id);
-        // 0x0 flag for a regular query.
-        append_u16(&mut out, 0x0);
-
-        // Number of questions.
-        append_u16(&mut out, self.questions.len() as u16);
-
-        // Number of answers, authorities, and additionals.
-        append_u16(&mut out, 0x0);
-        append_u16(&mut out, 0x0);
-        append_u16(&mut out, 0x0);
-
-        for question in &self.questions {
-            out.extend_from_slice(&question);
-        }
-
-        for answer in &self.answers {
-            out.extend_from_slice(&answer);
-        }
-        out
-    }
 }
 
 fn append_u16(out: &mut Vec<u8>, value: u16) {
@@ -284,3 +413,37 @@ impl fmt::Display for MdnsResponseError {
 }
 
 impl std::error::Error for MdnsResponseError {}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_size_answer() {
+        let mut out = Vec::new();
+        let answer = Answer::A { name: "_service._tcp.local", addr: [192, 168, 0, 1].into(), ttl: Duration::from_secs(4500) };
+        let size = answer.bytes_size();
+        answer.append_bytes(&mut out);
+        assert_eq!(size, out.len());
+        out.clear();
+
+        let answer = Answer::SRV { ttl: Duration::from_secs(4500), port: 42, priority: 0, weight: 0, name: "_service._tcp.local", target: "march.local" };
+        let size = answer.bytes_size();
+        answer.append_bytes(&mut out);
+        assert_eq!(size, out.len());
+        out.clear();
+
+        let answer = Answer::PTR { ttl: Duration::from_secs(4500), name: "_service._tcp.local", ptr: "march.local" };
+        let size = answer.bytes_size();
+        answer.append_bytes(&mut out);
+        assert_eq!(size, out.len());
+        out.clear();
+
+        let answer = Answer::TXT { ttl: Duration::from_secs(4500), name: "_service._tcp.local", entries: &["foo", "bar"] };
+        let size = answer.bytes_size();
+        answer.append_bytes(&mut out);
+        assert_eq!(size, out.len());
+        out.clear();
+    }
+}
