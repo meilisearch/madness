@@ -194,7 +194,12 @@ impl MdnsService {
                 Right(service_name) => {
                     if let Some(service_name) = service_name {
                         let mut query = dns::PacketBuilder::new();
-                        query.add_question(dns::Question { name: &service_name, qtype: dns::RRType::PTR, qclass: dns::QClass::IN });
+                        query.add_question(
+                            true,
+                            &service_name,
+                            dns::QueryClass::IN,
+                            dns::QueryType::PTR,
+                        );
                         let query = query.build();
                         self.query_send_buffers.push(query);
                     }

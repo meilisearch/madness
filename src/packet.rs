@@ -1,6 +1,5 @@
-use std::net::{IpAddr, SocketAddr};
 use std::net;
-
+use std::net::{IpAddr, SocketAddr};
 
 pub enum MdnsPacket {
     /// A query made by a remote.
