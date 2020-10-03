@@ -9,10 +9,10 @@ use super::traits::AppendBytes;
 
 #[derive(Debug)]
 pub struct ResourceRecord<'a> {
-    name: &'a str,
-    ttl: Duration,
-    class: Class,
-    data: RData<'a>,
+    pub name: &'a str,
+    pub ttl: Duration,
+    pub class: Class,
+    pub data: RData<'a>,
 }
 
 fn append_data<T: AppendBytes>(out: &mut Vec<u8>, data: &T) {
