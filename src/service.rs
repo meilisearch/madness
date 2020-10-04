@@ -6,19 +6,40 @@ use std::time::Duration;
 
 use crate::dns;
 use crate::error::Error;
-use crate::packet::*;
 use crate::META_QUERY_SERVICE;
 
-use dns_parser::Packet;
 use either::Either::{Left, Right};
 use futures::future;
 use lazy_static::lazy_static;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
+use super::dns::{QueryType, QueryClass};
 
 lazy_static! {
     static ref IPV4_MDNS_MULTICAST_ADDRESS: SocketAddr =
         SocketAddr::from((Ipv4Addr::new(224, 0, 0, 251), 5353,));
+}
+
+#[derive(Debug)]
+pub struct Query {
+    pub name: String,
+    pub prefer_unicast: bool,
+    pub qtype: QueryType,
+    pub qclass: QueryClass,
+    pub from: SocketAddr,
+    pub id: u16,
+}
+
+impl Query {
+    pub fn is_meta_service_query(&self) -> bool {
+        self.name == META_QUERY_SERVICE
+    }
+}
+
+#[derive(Debug)]
+pub enum Packet {
+    Query(Vec<Query>),
+    Response(mdns::Response),
 }
 
 pub struct MdnsService {
@@ -129,7 +150,7 @@ impl MdnsService {
         self.send_buffers.push(rsp);
     }
 
-    pub async fn next(mut self) -> (Self, Vec<MdnsPacket>) {
+    pub async fn next(mut self) -> (Self, Packet) {
         // Flush the query send buffer.
         loop {
             while !self.send_buffers.is_empty() {
@@ -185,16 +206,22 @@ impl MdnsService {
             match selected_output {
                 Left(left) => match left {
                     Ok((len, from)) => {
-                        let packets = self.parse_mdns_packets(&self.recv_buffer[..len], from);
-                        return (self, packets);
+                        if let Ok(packet) = self.parse_mdns_packets(&self.recv_buffer[..len], from) {
+                            return (self, packet);
+                        }
                     }
                     Err(_) => (), // non-fatal error
                 },
                 Right(service_name) => {
                     if let Some(service_name) = service_name {
                         let mut query = dns::PacketBuilder::new();
-                        query.add_question(&service_name, dns::RRType::PTR);
-                        let query = query.build_question(rand::random());
+                        query.add_question(
+                            true,
+                            &service_name,
+                            dns::QueryClass::IN,
+                            dns::QueryType::PTR,
+                        );
+                        let query = query.build();
                         self.query_send_buffers.push(query);
                     }
                 }
@@ -202,45 +229,31 @@ impl MdnsService {
         }
     }
 
-    fn parse_mdns_packets(&self, buf: &[u8], from: SocketAddr) -> Vec<MdnsPacket> {
-        match Packet::parse(buf) {
-            Ok(packet) => {
-                if packet.header.query {
-                    packet
-                        .questions
-                        .iter()
-                        .filter_map(|q| {
-                            let service_name = q.qname.to_string();
-                            if self.advertized_sevices.contains(&service_name) {
-                                Some(MdnsPacket::Query(MdnsQuery {
-                                    service_name,
-                                    from,
-                                    query_id: packet.header.id,
-                                }))
-                            } else if service_name == META_QUERY_SERVICE {
-                                let discovery =
-                                    MdnsPacket::ServiceDiscovery(MdnsServiceDiscovery {
-                                        from,
-                                        query_id: packet.header.id,
-                                    });
-                                Some(discovery)
-                            } else {
-                                None
-                            }
+    fn parse_mdns_packets(&self, buf: &[u8], from: SocketAddr) -> Result<Packet, Error> {
+        let packet = dns_parser::Packet::parse(buf)?;
+        if packet.header.query {
+            let queries = packet
+                .questions
+                .iter()
+                .filter_map(|q| {
+                    let name = q.qname.to_string();
+                    if self.advertized_sevices.contains(&name) || name == META_QUERY_SERVICE {
+                        Some(Query {
+                            name,
+                            from,
+                            id: packet.header.id,
+                            qclass: q.qclass,
+                            qtype: q.qtype,
+                            prefer_unicast: q.prefer_unicast,
                         })
-                        .collect()
-                } else {
-                    packet
-                        .answers
-                        .iter()
-                        .filter_map(|q| {
-                            let _service_name = q.name.to_string();
-                            Some(MdnsPacket::Response(Response::from_packet(&packet)))
-                        })
-                        .collect()
-                }
-            }
-            Err(_) => Vec::new(),
+                    } else {
+                        None
+                    }
+                })
+            .collect::<Vec<_>>();
+            Ok(Packet::Query(queries))
+        } else {
+            Ok(Packet::Response(mdns::Response::from_packet(&packet)))
         }
     }
 }
