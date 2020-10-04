@@ -3,10 +3,10 @@ use super::super::traits::AppendBytes;
 
 #[derive(Debug)]
 pub struct Record<'a> {
-    port: u16,
-    weight: u16,
-    priority: u16,
-    target: &'a str,
+    pub port: u16,
+    pub weight: u16,
+    pub priority: u16,
+    pub target: &'a str,
 }
 
 impl<'a> Record<'a> {

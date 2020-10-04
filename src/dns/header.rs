@@ -21,12 +21,14 @@ impl PacketHeader {
         self.id
     }
 
-    pub fn set_qr(&mut self, set: bool) -> &mut Self {
-        self.flags = ((-(set as i16) ^ self.flags as i16) & (1 << 15)) as u16;
+    /// Set the `QR` bit. Specifies whether the message is a query (true) or a response (false).
+    /// Defaults to true.
+    pub fn set_query(&mut self, set: bool) -> &mut Self {
+        self.flags = ((-(!set as i16) ^ self.flags as i16) & (1 << 15)) as u16;
         self
     }
 
-    pub fn qr(&self) -> bool {
+    pub fn is_query(&self) -> bool {
         self.flags & 1 << 15 != 0
     }
 

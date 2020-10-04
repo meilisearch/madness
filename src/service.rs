@@ -20,6 +20,7 @@ lazy_static! {
         SocketAddr::from((Ipv4Addr::new(224, 0, 0, 251), 5353,));
 }
 
+#[derive(Debug)]
 pub struct Query {
     pub name: String,
     pub prefer_unicast: bool,
@@ -30,11 +31,12 @@ pub struct Query {
 }
 
 impl Query {
-    fn is_meta_service_query(&self) -> bool {
+    pub fn is_meta_service_query(&self) -> bool {
         self.name == META_QUERY_SERVICE
     }
 }
 
+#[derive(Debug)]
 pub enum Packet {
     Query(Vec<Query>),
     Response(mdns::Response),
@@ -153,7 +155,6 @@ impl MdnsService {
         loop {
             while !self.send_buffers.is_empty() {
                 let to_send = self.send_buffers.remove(0);
-                println!("sending");
 
                 match self
                     .socket
@@ -236,7 +237,7 @@ impl MdnsService {
                 .iter()
                 .filter_map(|q| {
                     let name = q.qname.to_string();
-                    if self.advertized_sevices.contains(&name) {
+                    if self.advertized_sevices.contains(&name) || name == META_QUERY_SERVICE {
                         Some(Query {
                             name,
                             from,

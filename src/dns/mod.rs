@@ -7,6 +7,7 @@ mod packet;
 use std::time::Duration;
 pub use resource_record::{ResourceRecord, RData};
 pub use packet::{PacketBuilder, QueryType, QueryClass};
+pub use dns_parser::Class;
 
 fn append_u16(out: &mut Vec<u8>, value: u16) {
     out.push(((value >> 8) & 0xff) as u8);

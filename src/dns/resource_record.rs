@@ -1,4 +1,6 @@
 use std::time::Duration;
+use std::net::Ipv4Addr;
+
 use super::rdata::a::Record as A;
 use super::rdata::ptr::Record as Ptr;
 use super::rdata::srv::Record as Srv;
@@ -9,10 +11,16 @@ use super::traits::AppendBytes;
 
 #[derive(Debug)]
 pub struct ResourceRecord<'a> {
-    pub name: &'a str,
-    pub ttl: Duration,
-    pub class: Class,
-    pub data: RData<'a>,
+    name: &'a str,
+    ttl: Duration,
+    class: Class,
+    data: RData<'a>,
+}
+
+impl<'a> ResourceRecord<'a> {
+    pub fn new(name: &'a str, ttl: Duration, class: Class, data: RData<'a>) -> Self {
+        Self { name, ttl, class, data }
+    }
 }
 
 fn append_data<T: AppendBytes>(out: &mut Vec<u8>, data: &T) {
@@ -41,6 +49,20 @@ pub enum RData<'a> {
     PTR(Ptr<'a>),
     SRV(Srv<'a>),
     TXT(Txt<'a>),
+}
+
+impl<'a> RData<'a> {
+    pub fn ptr(ptr: &'a str) -> Self {
+        Self::PTR(Ptr(ptr))
+    }
+
+    pub fn a(addr: Ipv4Addr) -> Self {
+        Self::A(A(addr))
+    }
+
+    pub fn srv(port: u16, priority: u16, weight: u16, target: &'a str) -> Self {
+        Self::SRV(Srv { port, weight, priority, target})
+    }
 }
 
 impl AppendBytes for RData<'_> {
