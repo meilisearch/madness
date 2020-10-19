@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut service = MdnsService::new(true)?;
     service.register(SERVICE_NAME);
     loop {
-        let (mut svc, packet) = service.next().await;
+        let packet = service.next().await;
         match packet {
             Packet::Query(queries) => {
                 for query in queries {
@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Class::IN,
                                 RData::ptr(SERVICE_NAME)));
                         let packet = packet.build();
-                        svc.enqueue_response(packet);
+                        service.enqueue_response(packet);
                     } else {
                         match query.name.as_str() {
                             SERVICE_NAME => {
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         Class::IN,
                                         RData::a(Ipv4Addr::new(0, 0, 0, 0))));
                                 let packet = packet.build();
-                                svc.enqueue_response(packet);
+                                service.enqueue_response(packet);
                             }
                             _ => (),
                         }
@@ -61,6 +61,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 //println!("response: {:?}", response);
             }
         }
-        service = svc;
     }
 }

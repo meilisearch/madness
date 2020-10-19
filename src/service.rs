@@ -147,7 +147,7 @@ impl MdnsService {
         self.send_buffers.push(rsp);
     }
 
-    pub async fn next(mut self) -> (Self, Packet) {
+    pub async fn next(&mut self) -> Packet {
         // Flush the query send buffer.
         loop {
             while !self.send_buffers.is_empty() {
@@ -204,7 +204,7 @@ impl MdnsService {
                 Either::Left(left) => match left {
                     Ok((len, from)) => {
                         if let Ok(packet) = self.parse_mdns_packets(&self.recv_buffer[..len], from) {
-                            return (self, packet);
+                            return packet;
                         }
                     }
                     Err(_) => (), // non-fatal error

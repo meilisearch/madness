@@ -63,6 +63,10 @@ impl<'a> RData<'a> {
     pub fn srv(port: u16, priority: u16, weight: u16, target: &'a str) -> Self {
         Self::SRV(Srv { port, weight, priority, target})
     }
+
+    pub fn txt(txt: &'a str) -> Self {
+        Self::TXT(Txt (txt))
+    }
 }
 
 impl AppendBytes for RData<'_> {

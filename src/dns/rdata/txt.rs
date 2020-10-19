@@ -1,8 +1,8 @@
-use super::super::{append_u16, append_qname};
+use super::super::append_u16;
 use super::super::traits::AppendBytes;
 
 #[derive(Debug)]
-pub struct Record<'a>(pub &'a[&'a str]);
+pub struct Record<'a>(pub &'a str);
 
 impl<'a> Record<'a> {
     pub const TYPE: usize =  16;
@@ -12,9 +12,8 @@ impl AppendBytes for Record<'_> {
     fn append_bytes(&self, out: &mut Vec<u8>) {
         let idx = out.len();
         append_u16(out, 0);
-        for entry in self.0 {
-            out.push(entry.len() as u8);
-            append_qname(out, entry.as_bytes());
+        for c in self.0.bytes() {
+            out.push(c);
         }
         let len = out[idx..].len() - 2;
         out[idx] = ((len >> 8) & 0xff) as u8;
