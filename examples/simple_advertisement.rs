@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 META_QUERY_SERVICE,
                                 Duration::from_secs(4500),
                                 Class::IN,
-                                RData::ptr("_myservice._tcp.local")));
+                                RData::ptr(SERVICE_NAME)));
                         let packet = packet.build();
                         svc.enqueue_response(packet);
                     } else {
@@ -35,12 +35,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .set_id(rand::random())
                                     .set_query(false);
                                 packet.add_answer(ResourceRecord::new(
-                                        "_myservice._tcp.local",
+                                        SERVICE_NAME,
                                         Duration::from_secs(4500),
                                         Class::IN,
                                         RData::ptr("marin._myservice._tcp.local")));
                                 packet.add_answer(ResourceRecord::new(
-                                        "marin.local",
+                                        "marin._myservice._tcp.local",
                                         Duration::from_secs(4500),
                                         Class::IN,
                                         RData::srv(8594, 0, 0, "marin.local")));

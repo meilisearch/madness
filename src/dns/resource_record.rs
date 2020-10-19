@@ -11,10 +11,10 @@ use super::traits::AppendBytes;
 
 #[derive(Debug)]
 pub struct ResourceRecord<'a> {
-    name: &'a str,
-    ttl: Duration,
-    class: Class,
-    data: RData<'a>,
+    pub(crate) name: &'a str,
+    pub(crate) ttl: Duration,
+    pub(crate) class: Class,
+    pub(crate) data: RData<'a>,
 }
 
 impl<'a> ResourceRecord<'a> {
