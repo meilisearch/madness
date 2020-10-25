@@ -17,9 +17,34 @@ pub struct ResourceRecord<'a> {
     pub(crate) data: RData<'a>,
 }
 
+macro_rules! create_class_fn {
+    ($class:ident) => {
+        #[allow(non_snake_case)]
+        /// Creates a `ResourceRecord` with a class of the same name, and a default ttl to 4500s.
+        pub fn $class(name: &'a str, data: RData<'a>) -> Self {
+            Self {
+                class: Class::$class,
+                name,
+                data,
+                ttl: Duration::from_secs(4500),
+            }
+        }
+    };
+}
+
 impl<'a> ResourceRecord<'a> {
     pub fn new(name: &'a str, ttl: Duration, class: Class, data: RData<'a>) -> Self {
         Self { name, ttl, class, data }
+    }
+
+    create_class_fn!(IN);
+    create_class_fn!(CS);
+    create_class_fn!(HS);
+    create_class_fn!(CH);
+
+    pub fn set_ttl(mut self, ttl: Duration) -> Self {
+        self.ttl = ttl;
+        self
     }
 }
 

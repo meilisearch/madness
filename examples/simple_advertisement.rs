@@ -20,10 +20,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         packet.header_mut()
                             .set_id(rand::random())
                             .set_query(false);
-                        packet.add_answer(ResourceRecord::new(
+                        packet.add_answer(ResourceRecord::IN(
                                 META_QUERY_SERVICE,
-                                Duration::from_secs(4500),
-                                Class::IN,
                                 RData::ptr(SERVICE_NAME)));
                         let packet = packet.build();
                         service.enqueue_response(packet);
@@ -34,20 +32,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 packet.header_mut()
                                     .set_id(rand::random())
                                     .set_query(false);
-                                packet.add_answer(ResourceRecord::new(
+                                packet.add_answer(ResourceRecord::IN(
                                         SERVICE_NAME,
-                                        Duration::from_secs(4500),
-                                        Class::IN,
                                         RData::ptr("marin._myservice._tcp.local")));
-                                packet.add_answer(ResourceRecord::new(
-                                        "marin._myservice._tcp.local",
-                                        Duration::from_secs(4500),
-                                        Class::IN,
-                                        RData::srv(8594, 0, 0, "marin.local")));
-                                packet.add_answer(ResourceRecord::new(
+                                packet.add_answer(ResourceRecord::IN(
                                         "marin.local",
-                                        Duration::from_secs(4500),
-                                        Class::IN,
+                                        RData::srv(8594, 0, 0, "marin.local")));
+                                packet.add_answer(ResourceRecord::IN(
+                                        "marin.local",
                                         RData::a(Ipv4Addr::new(0, 0, 0, 0))));
                                 let packet = packet.build();
                                 service.enqueue_response(packet);
