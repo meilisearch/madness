@@ -92,7 +92,7 @@ mod test {
             name: "_service._tcp.local",
             ttl: Duration::from_secs(4500),
             class: Class::IN,
-            data: crate::dns::RData::TXT(Txt(&["foo", "bar", "foobar"])),
+            data: crate::dns::RData::TXT(Txt("foobar")),
         };
 
         let mut packet = PacketBuilder::new();

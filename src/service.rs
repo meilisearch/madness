@@ -8,17 +8,14 @@ use crate::dns;
 use crate::error::Error;
 use crate::META_QUERY_SERVICE;
 
-use either::Either::{Left, Right};
-use futures::future;
-use lazy_static::lazy_static;
+use futures::future::Either;
+use once_cell::sync::Lazy;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
 use super::dns::{QueryType, QueryClass};
 
-lazy_static! {
-    static ref IPV4_MDNS_MULTICAST_ADDRESS: SocketAddr =
-        SocketAddr::from((Ipv4Addr::new(224, 0, 0, 251), 5353,));
-}
+static IPV4_MDNS_MULTICAST_ADDRESS: Lazy<SocketAddr> =
+    Lazy::new(|| SocketAddr::from((Ipv4Addr::new(224, 0, 0, 251), 5353)));
 
 #[derive(Debug)]
 pub struct Query {
@@ -150,7 +147,7 @@ impl MdnsService {
         self.send_buffers.push(rsp);
     }
 
-    pub async fn next(mut self) -> (Self, Packet) {
+    pub async fn next(&mut self) -> Packet {
         // Flush the query send buffer.
         loop {
             while !self.send_buffers.is_empty() {
@@ -199,20 +196,20 @@ impl MdnsService {
             )
             .await
             {
-                future::Either::Left((packets, _)) => Left(packets),
-                future::Either::Right((service, _)) => Right(service),
+                Either::Left((packets, _)) => Either::Left(packets),
+                Either::Right((service, _)) => Either::Right(service),
             };
 
             match selected_output {
-                Left(left) => match left {
+                Either::Left(left) => match left {
                     Ok((len, from)) => {
                         if let Ok(packet) = self.parse_mdns_packets(&self.recv_buffer[..len], from) {
-                            return (self, packet);
+                            return packet;
                         }
                     }
                     Err(_) => (), // non-fatal error
                 },
-                Right(service_name) => {
+                Either::Right(service_name) => {
                     if let Some(service_name) = service_name {
                         let mut query = dns::PacketBuilder::new();
                         query.add_question(

@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut service = MdnsService::new(true)?;
     service.register(SERVICE_NAME);
     loop {
-        let (mut svc, packet) = service.next().await;
+        let packet = service.next().await;
         match packet {
             Packet::Query(queries) => {
                 for query in queries {
@@ -24,9 +24,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 META_QUERY_SERVICE,
                                 Duration::from_secs(4500),
                                 Class::IN,
-                                RData::ptr("_myservice._tcp.local")));
+                                RData::ptr(SERVICE_NAME)));
                         let packet = packet.build();
-                        svc.enqueue_response(packet);
+                        service.enqueue_response(packet);
                     } else {
                         match query.name.as_str() {
                             SERVICE_NAME => {
@@ -35,12 +35,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .set_id(rand::random())
                                     .set_query(false);
                                 packet.add_answer(ResourceRecord::new(
-                                        "_myservice._tcp.local",
+                                        SERVICE_NAME,
                                         Duration::from_secs(4500),
                                         Class::IN,
                                         RData::ptr("marin._myservice._tcp.local")));
                                 packet.add_answer(ResourceRecord::new(
-                                        "marin.local",
+                                        "marin._myservice._tcp.local",
                                         Duration::from_secs(4500),
                                         Class::IN,
                                         RData::srv(8594, 0, 0, "marin.local")));
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         Class::IN,
                                         RData::a(Ipv4Addr::new(0, 0, 0, 0))));
                                 let packet = packet.build();
-                                svc.enqueue_response(packet);
+                                service.enqueue_response(packet);
                             }
                             _ => (),
                         }
@@ -61,6 +61,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 //println!("response: {:?}", response);
             }
         }
-        service = svc;
     }
 }
