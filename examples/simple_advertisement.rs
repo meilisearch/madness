@@ -1,8 +1,8 @@
-use std::time::Duration;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use madness::{Packet, MdnsService, META_QUERY_SERVICE};
-use madness::dns::{PacketBuilder, ResourceRecord, Class, RData};
+use madness::dns::{PacketBuilder, ResourceRecord, RData};
 
 const SERVICE_NAME: &str = "_myservice._tcp.local";
 
@@ -29,18 +29,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match query.name.as_str() {
                             SERVICE_NAME => {
                                 let mut packet = PacketBuilder::new();
-                                packet.header_mut()
+                                packet
+                                    .add_answer(ResourceRecord::IN(
+                                            SERVICE_NAME,
+                                            RData::ptr("marin._myservice._tcp.local")))
+                                    .add_answer(ResourceRecord::IN(
+                                            "marin._myservice._tcp.local",
+                                            RData::srv(8594, 0, 0, "marin.local")))
+                                    .add_answer(ResourceRecord::IN(
+                                            "marin.local",
+                                            RData::a(Ipv4Addr::new(192,168,31,78)))
+                                        .set_ttl(Duration::from_secs(1000)))
+                                    .add_answer(ResourceRecord::IN(
+                                            "marin._myservice._tcp.local",
+                                            RData::txt("foobar")))
+                                    .header_mut()
                                     .set_id(rand::random())
                                     .set_query(false);
-                                packet.add_answer(ResourceRecord::IN(
-                                        SERVICE_NAME,
-                                        RData::ptr("marin._myservice._tcp.local")));
-                                packet.add_answer(ResourceRecord::IN(
-                                        "marin.local",
-                                        RData::srv(8594, 0, 0, "marin.local")));
-                                packet.add_answer(ResourceRecord::IN(
-                                        "marin.local",
-                                        RData::a(Ipv4Addr::new(0, 0, 0, 0))));
                                 let packet = packet.build();
                                 service.enqueue_response(packet);
                             }
