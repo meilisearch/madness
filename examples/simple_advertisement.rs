@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         .set_ttl(Duration::from_secs(1000)))
                                     .add_answer(ResourceRecord::IN(
                                             "marin._myservice._tcp.local",
-                                            RData::txt("foobar")))
+                                            RData::txt(&["foobar"])))
                                     .header_mut()
                                     .set_id(rand::random())
                                     .set_query(false);

@@ -74,6 +74,7 @@ impl<'a> PacketBuilder<'a> {
 mod test {
     use super::*;
     use dns_parser::Class;
+    use mdns::RecordKind;
     use std::time::Duration;
     use std::net::Ipv4Addr;
     use super::super::rdata::a::Record as A;
@@ -92,7 +93,7 @@ mod test {
             name: "_service._tcp.local",
             ttl: Duration::from_secs(4500),
             class: Class::IN,
-            data: crate::dns::RData::TXT(Txt("foobar")),
+            data: crate::dns::RData::TXT(Txt(&["foo=bar", "baz=qux", "foobar"])),
         };
 
         let mut packet = PacketBuilder::new();
@@ -105,5 +106,11 @@ mod test {
         let parsed = Packet::parse(&packet).unwrap();
         let packet = mdns::Response::from_packet(&parsed);
         println!("{:#?}", packet);
+
+        if let RecordKind::TXT(ref txt) = packet.answers.get(1).unwrap().kind {
+            assert_eq!(txt, &["foo=bar", "baz=qux", "foobar"]);
+        } else {
+            panic!("Expected TXT record");
+        }
     }
 }

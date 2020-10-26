@@ -89,7 +89,7 @@ impl<'a> RData<'a> {
         Self::SRV(Srv { port, weight, priority, target})
     }
 
-    pub fn txt(txt: &'a str) -> Self {
+    pub fn txt(txt: &'a [ &'a str]) -> Self {
         Self::TXT(Txt (txt))
     }
 }
