@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 use std::io;
-use std::net::Ipv4Addr;
 use std::net::SocketAddr;
+use std::net::{Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
 use std::time::Duration;
 
 use crate::dns;
 use crate::error::Error;
 use crate::META_QUERY_SERVICE;
 
-use futures::future::Either;
 use once_cell::sync::Lazy;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
@@ -16,6 +16,8 @@ use super::dns::{QueryType, QueryClass};
 
 static IPV4_MDNS_MULTICAST_ADDRESS: Lazy<SocketAddr> =
     Lazy::new(|| SocketAddr::from((Ipv4Addr::new(224, 0, 0, 251), 5353)));
+static IPV6_MDNS_MULTICAST_ADDRESS: Lazy<SocketAddr> =
+    Lazy::new(|| SocketAddr::from((Ipv6Addr::from_str("FF02::FB").unwrap(), 5353)));
 
 #[derive(Debug)]
 pub struct Query {
@@ -40,9 +42,11 @@ pub enum Packet {
 }
 
 pub struct MdnsService {
-    socket: tokio::net::UdpSocket,
+    socket_v4: tokio::net::UdpSocket,
+    socket_v6: tokio::net::UdpSocket,
     query_socket: tokio::net::UdpSocket,
-    recv_buffer: [u8; 2048],
+    recv_buffer_v4: [u8; 2048],
+    recv_buffer_v6: [u8; 2048],
     /// Buffers pending to send on the main socket.
     send_buffers: Vec<Vec<u8>>,
     /// Buffers pending to send on the query socket.
@@ -60,45 +64,78 @@ impl ServiceDiscovery {
     }
 }
 
+macro_rules! send_packets {
+    ($self:ident, $socket:ident, $addr:expr, $to_send:ident) => {
+        match $self
+            .$socket
+            .send_to(&$to_send, $addr)
+            .await
+            {
+                Ok(bytes_written) => {
+                    debug_assert_eq!(bytes_written, $to_send.len());
+                }
+                Err(_) => {
+                    // Errors are non-fatal because they can happen for example if we lose
+                    // connection to the network.
+                    $self.send_buffers.clear();
+                    break;
+                }
+            }
+    };
+}
+
 impl MdnsService {
-    /// creates a new mdns Service to advertize and discover mmdns services. If `loopback` is
+    /// creates a new mdns Service to advertize and discover mdns services. If `loopback` is
     /// enabled, you will receive the multicast packets.
     pub fn new(loopback: bool) -> Result<Self, Error> {
-        let std_socket = {
-            #[cfg(unix)]
-            fn platform_specific(s: &net2::UdpBuilder) -> io::Result<()> {
-                net2::unix::UnixUdpBuilderExt::reuse_port(s, true)?;
-                Ok(())
-            }
-            #[cfg(not(unix))]
-            fn platform_specific(_: &net2::UdpBuilder) -> io::Result<()> {
-                Ok(())
-            }
+        #[cfg(unix)]
+        fn platform_specific(s: &net2::UdpBuilder) -> io::Result<()> {
+            net2::unix::UnixUdpBuilderExt::reuse_port(s, true)?;
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        fn platform_specific(_: &net2::UdpBuilder) -> io::Result<()> {
+            Ok(())
+        }
+        
+        // setup ipv4 socket
+        let std_socket_v4 = {
             let builder = net2::UdpBuilder::new_v4()?;
             builder.reuse_address(true)?;
             platform_specific(&builder)?;
             builder.bind(("0.0.0.0", 5353))?
         };
 
-        let socket = tokio::net::UdpSocket::from_std(std_socket)?;
-        // Given that we pass an IP address to bind, which does not need to be resolved, we can
-        // use std::net::UdpSocket::bind, instead of its async counterpart from async-std.
-        let query_socket = tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind((
-            Ipv4Addr::from([0u8, 0, 0, 0]),
-            0u16,
-        ))?)?;
+        let socket_v4 = tokio::net::UdpSocket::from_std(std_socket_v4)?;
+        socket_v4.set_multicast_loop_v4(loopback)?;
+        socket_v4.set_multicast_ttl_v4(255)?;
+        socket_v4.join_multicast_v4(From::from([224, 0, 0, 251]), Ipv4Addr::UNSPECIFIED)?;
 
-        socket.set_multicast_loop_v4(loopback)?;
-        socket.set_multicast_ttl_v4(255)?;
-        // TODO: correct interfaces?
-        socket.join_multicast_v4(From::from([224, 0, 0, 251]), Ipv4Addr::UNSPECIFIED)?;
+        // setup ipv6 socket
+        let std_socket_v6 = {
+            let builder = net2::UdpBuilder::new_v6()?;
+            builder.reuse_address(true)?;
+            platform_specific(&builder)?;
+            builder.bind(("::", 5353))?
+        };
+
+        let socket_v6 = tokio::net::UdpSocket::from_std(std_socket_v6)?;
+        socket_v6.set_multicast_loop_v6(loopback)?;
+        socket_v6.join_multicast_v6(&FromStr::from_str("FF02::FB").unwrap(), 0)?;
+
+        let query_socket = tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind(&[
+                SocketAddr::from((Ipv4Addr::from([0u8, 0, 0, 0]), 0u16)),
+                SocketAddr::from((Ipv6Addr::from_str("::").unwrap(), 0u16))
+        ][..])?)?;
 
         let (tx, rx) = mpsc::channel(100);
 
         Ok(MdnsService {
-            socket,
+            socket_v4,
+            socket_v6,
             query_socket,
-            recv_buffer: [0; 2048],
+            recv_buffer_v4: [0; 2048],
+            recv_buffer_v6: [0; 2048],
             send_buffers: Vec::new(),
             query_send_buffers: Vec::new(),
             advertized_sevices: HashSet::new(),
@@ -147,80 +184,45 @@ impl MdnsService {
         self.send_buffers.push(rsp);
     }
 
-    pub async fn next(&mut self) -> Packet {
+    async fn send_buffers(&mut self) {
         // Flush the query send buffer.
-        loop {
-            while !self.send_buffers.is_empty() {
-                let to_send = self.send_buffers.remove(0);
+        while !self.send_buffers.is_empty() {
+            let to_send = self.send_buffers.remove(0);
+            send_packets!(self, socket_v4, *IPV4_MDNS_MULTICAST_ADDRESS, to_send);
+            send_packets!(self, socket_v6, *IPV6_MDNS_MULTICAST_ADDRESS, to_send);
+        }
 
-                match self
-                    .socket
-                    .send_to(&to_send, *IPV4_MDNS_MULTICAST_ADDRESS)
-                    .await
-                {
-                    Ok(bytes_written) => {
-                        debug_assert_eq!(bytes_written, to_send.len());
-                    }
-                    Err(_) => {
-                        // Errors are non-fatal because they can happen for example if we lose
-                        // connection to the network.
-                        self.send_buffers.clear();
-                        break;
-                    }
-                }
-            }
+        while !self.query_send_buffers.is_empty() {
+            let to_send = self.query_send_buffers.remove(0);
+            send_packets!(self, query_socket, &[*IPV4_MDNS_MULTICAST_ADDRESS, *IPV6_MDNS_MULTICAST_ADDRESS][..], to_send);
+        }
+    }
 
-            while !self.query_send_buffers.is_empty() {
-                let to_send = self.query_send_buffers.remove(0);
+    pub async fn next(&mut self) -> Packet {
+        loop{
+            self.send_buffers().await;
 
-                match self
-                    .query_socket
-                    .send_to(&to_send, *IPV4_MDNS_MULTICAST_ADDRESS)
-                    .await
-                {
-                    Ok(bytes_written) => {
-                        debug_assert_eq!(bytes_written, to_send.len());
+            tokio::select! {
+                Ok((len, from)) = self.socket_v4.recv_from(&mut self.recv_buffer_v4) => {
+                    if let Ok(packet) = self.parse_mdns_packets(&self.recv_buffer_v4[..len], from) {
+                        return packet;
                     }
-                    Err(_) => {
-                        // Errors are non-fatal because they can happen for example if we lose
-                        // connection to the network.
-                        self.query_send_buffers.clear();
-                        break;
-                    }
-                }
-            }
-
-            let selected_output = match futures::future::select(
-                Box::pin(self.socket.recv_from(&mut self.recv_buffer)),
-                Box::pin(self.discovery_scheduler_rcv.recv()),
-            )
-            .await
-            {
-                Either::Left((packets, _)) => Either::Left(packets),
-                Either::Right((service, _)) => Either::Right(service),
-            };
-
-            match selected_output {
-                Either::Left(left) => match left {
-                    Ok((len, from)) => {
-                        if let Ok(packet) = self.parse_mdns_packets(&self.recv_buffer[..len], from) {
-                            return packet;
-                        }
-                    }
-                    Err(_) => (), // non-fatal error
                 },
-                Either::Right(service_name) => {
-                    if let Some(service_name) = service_name {
-                        let mut query = dns::PacketBuilder::new();
-                        query.add_question(
-                            true,
-                            &service_name,
-                            dns::QueryClass::IN,
-                            dns::QueryType::PTR,
-                        );
-                        let query = query.build();
-                        self.query_send_buffers.push(query);
+                Ok((len, from)) = self.socket_v6.recv_from(&mut self.recv_buffer_v6) => {
+                    if let Ok(packet) = self.parse_mdns_packets(&self.recv_buffer_v6[..len], from) {
+                        return packet;
                     }
+                },
+                Some(service_name) = self.discovery_scheduler_rcv.recv() => {
+                    let mut query = dns::PacketBuilder::new();
+                    query.add_question(
+                        true,
+                        &service_name,
+                        dns::QueryClass::IN,
+                        dns::QueryType::PTR,
+                    );
+                    let query = query.build();
+                    self.query_send_buffers.push(query);
                 }
             }
         }
