@@ -1,7 +1,8 @@
 use std::time::Duration;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use super::rdata::a::Record as A;
+use super::rdata::aaaa::Record as AAAA;
 use super::rdata::ptr::Record as Ptr;
 use super::rdata::srv::Record as Srv;
 use super::rdata::txt::Record as Txt;
@@ -71,6 +72,7 @@ impl<'a> AppendBytes for ResourceRecord<'a> {
 #[derive(Debug)]
 pub enum RData<'a> {
     A(A),
+    AAAA(AAAA),
     PTR(Ptr<'a>),
     SRV(Srv<'a>),
     TXT(Txt<'a>),
@@ -83,6 +85,10 @@ impl<'a> RData<'a> {
 
     pub fn a(addr: Ipv4Addr) -> Self {
         Self::A(A(addr))
+    }
+
+    pub fn aaaa(addr: Ipv6Addr) -> Self {
+        Self::AAAA(AAAA(addr))
     }
 
     pub fn srv(port: u16, priority: u16, weight: u16, target: &'a str) -> Self {
@@ -98,6 +104,7 @@ impl AppendBytes for RData<'_> {
     fn append_bytes(&self, out: &mut Vec<u8>) {
         match self {
             RData::A(data) => data.append_bytes(out),
+            RData::AAAA(data) => data.append_bytes(out),
             RData::PTR(data) => data.append_bytes(out),
             RData::SRV(data) => data.append_bytes(out),
             RData::TXT(data) => data.append_bytes(out),
@@ -109,6 +116,7 @@ impl RData<'_> {
     fn code(&self) -> u16 {
         match self {
             RData::A(_) => A::TYPE as u16,
+            RData::AAAA(_) => AAAA::TYPE as u16,
             RData::PTR(_) => Ptr::TYPE as u16,
             RData::SRV(_) => Srv::TYPE as u16,
             RData::TXT(_) => Txt::TYPE as u16,
