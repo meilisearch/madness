@@ -76,8 +76,9 @@ mod test {
     use dns_parser::Class;
     use mdns::RecordKind;
     use std::time::Duration;
-    use std::net::Ipv4Addr;
+    use std::net::{Ipv4Addr, Ipv6Addr};
     use super::super::rdata::a::Record as A;
+    use super::super::rdata::aaaa::Record as AAAA;
     use super::super::rdata::txt::Record as Txt;
     use dns_parser::Packet;
 
@@ -87,7 +88,7 @@ mod test {
             name: "_service._tcp.local",
             ttl: Duration::from_secs(4500),
             class: Class::IN,
-            data: crate::dns::RData::A(A(Ipv4Addr::new(0, 0, 0, 0))),
+            data: crate::dns::RData::A(A(Ipv4Addr::new(7, 123, 234, 1))),
         };
         let answer2 = ResourceRecord {
             name: "_service._tcp.local",
@@ -95,13 +96,20 @@ mod test {
             class: Class::IN,
             data: crate::dns::RData::TXT(Txt(&["foo=bar", "baz=qux", "foobar"])),
         };
+        let answer3 = ResourceRecord {
+            name: "_service._tcp.local",
+            ttl: Duration::from_secs(4500),
+            class: Class::IN,
+            data: crate::dns::RData::AAAA(AAAA(Ipv6Addr::new(0xabcd, 0x4391, 0xd53a, 0x98dd, 0x7a4f, 0x0000, 0xffff, 0x0123))),
+        };
 
         let mut packet = PacketBuilder::new();
 
         packet.header_mut().set_id(12);
         packet
             .add_answer(answer1)
-            .add_answer(answer2);
+            .add_answer(answer2)
+            .add_answer(answer3);
         let packet = packet.build();
         let parsed = Packet::parse(&packet).unwrap();
         let packet = mdns::Response::from_packet(&parsed);
