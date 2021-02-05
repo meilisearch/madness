@@ -1,12 +1,12 @@
 use super::super::append_u32;
-use std::net::Ipv4Addr;
 use super::super::traits::AppendBytes;
+use std::net::Ipv4Addr;
 
 #[derive(Debug)]
 pub struct Record(pub Ipv4Addr);
 
 impl Record {
-    pub const TYPE: usize =  1;
+    pub const TYPE: usize = 1;
 }
 
 impl AppendBytes for Record {

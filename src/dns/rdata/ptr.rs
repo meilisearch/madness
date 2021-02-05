@@ -5,7 +5,7 @@ use super::super::traits::AppendBytes;
 pub struct Record<'a>(pub &'a str);
 
 impl<'a> Record<'a> {
-    pub const TYPE: usize =  12;
+    pub const TYPE: usize = 12;
 }
 
 impl AppendBytes for Record<'_> {

@@ -1,8 +1,8 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use madness::{Packet, MdnsService, META_QUERY_SERVICE};
-use madness::dns::{PacketBuilder, ResourceRecord, RData};
+use madness::dns::{PacketBuilder, RData, ResourceRecord};
+use madness::{MdnsService, Packet, META_QUERY_SERVICE};
 
 const SERVICE_NAME: &str = "_myservice._tcp.local";
 
@@ -17,12 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for query in queries {
                     if query.is_meta_service_query() {
                         let mut packet = PacketBuilder::new();
-                        packet.header_mut()
-                            .set_id(rand::random())
-                            .set_query(false);
+                        packet.header_mut().set_id(rand::random()).set_query(false);
                         packet.add_answer(ResourceRecord::IN(
-                                META_QUERY_SERVICE,
-                                RData::ptr(SERVICE_NAME)));
+                            META_QUERY_SERVICE,
+                            RData::ptr(SERVICE_NAME),
+                        ));
                         let packet = packet.build();
                         service.enqueue_response(packet);
                     } else {
@@ -31,18 +30,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let mut packet = PacketBuilder::new();
                                 packet
                                     .add_answer(ResourceRecord::IN(
-                                            SERVICE_NAME,
-                                            RData::ptr("marin._myservice._tcp.local")))
+                                        SERVICE_NAME,
+                                        RData::ptr("marin._myservice._tcp.local"),
+                                    ))
                                     .add_answer(ResourceRecord::IN(
-                                            "marin._myservice._tcp.local",
-                                            RData::srv(8594, 0, 0, "marin.local")))
-                                    .add_answer(ResourceRecord::IN(
+                                        "marin._myservice._tcp.local",
+                                        RData::srv(8594, 0, 0, "marin.local"),
+                                    ))
+                                    .add_answer(
+                                        ResourceRecord::IN(
                                             "marin.local",
-                                            RData::a(Ipv4Addr::new(192,168,31,78)))
-                                        .set_ttl(Duration::from_secs(1000)))
+                                            RData::a(Ipv4Addr::new(192, 168, 31, 78)),
+                                        )
+                                        .set_ttl(Duration::from_secs(1000)),
+                                    )
                                     .add_answer(ResourceRecord::IN(
-                                            "marin._myservice._tcp.local",
-                                            RData::txt(&["foobar"])))
+                                        "marin._myservice._tcp.local",
+                                        RData::txt(&["foobar"]),
+                                    ))
                                     .header_mut()
                                     .set_id(rand::random())
                                     .set_query(false);

@@ -1,8 +1,8 @@
 use super::header::PacketHeader;
-use super::{append_qname, append_u16};
 use super::traits::AppendBytes;
 use super::ResourceRecord;
-pub use dns_parser::{QueryType, QueryClass};
+use super::{append_qname, append_u16};
+pub use dns_parser::{QueryClass, QueryType};
 
 struct Question<'a> {
     pub name: &'a str,
@@ -47,8 +47,19 @@ impl<'a> PacketBuilder<'a> {
     }
 
     /// Add a question to the packet
-    pub fn add_question(&mut self, prefer_unicast: bool, name: &'a str, qclass: QueryClass, qtype: QueryType) -> &mut Self {
-        self.questions.push(Question { name, prefer_unicast, qtype, qclass});
+    pub fn add_question(
+        &mut self,
+        prefer_unicast: bool,
+        name: &'a str,
+        qclass: QueryClass,
+        qtype: QueryType,
+    ) -> &mut Self {
+        self.questions.push(Question {
+            name,
+            prefer_unicast,
+            qtype,
+            qclass,
+        });
         self.header.qd_count += 1;
         self
     }
@@ -64,23 +75,27 @@ impl<'a> PacketBuilder<'a> {
     pub fn build(self) -> Vec<u8> {
         let mut buffer = Vec::with_capacity(4096);
         self.header.append_bytes(&mut buffer);
-        self.questions.iter().for_each(|q| q.append_bytes(&mut buffer));
-        self.answers.iter().for_each(|q| q.append_bytes(&mut buffer));
+        self.questions
+            .iter()
+            .for_each(|q| q.append_bytes(&mut buffer));
+        self.answers
+            .iter()
+            .for_each(|q| q.append_bytes(&mut buffer));
         buffer
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use dns_parser::Class;
-    use mdns::RecordKind;
-    use std::time::Duration;
-    use std::net::{Ipv4Addr, Ipv6Addr};
     use super::super::rdata::a::Record as A;
     use super::super::rdata::aaaa::Record as AAAA;
     use super::super::rdata::txt::Record as Txt;
+    use super::*;
+    use dns_parser::Class;
     use dns_parser::Packet;
+    use mdns::RecordKind;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::time::Duration;
 
     #[test]
     fn build_packet() {
@@ -100,7 +115,9 @@ mod test {
             name: "_service._tcp.local",
             ttl: Duration::from_secs(4500),
             class: Class::IN,
-            data: crate::dns::RData::AAAA(AAAA(Ipv6Addr::new(0xabcd, 0x4391, 0xd53a, 0x98dd, 0x7a4f, 0x0000, 0xffff, 0x0123))),
+            data: crate::dns::RData::AAAA(AAAA(Ipv6Addr::new(
+                0xabcd, 0x4391, 0xd53a, 0x98dd, 0x7a4f, 0x0000, 0xffff, 0x0123,
+            ))),
         };
 
         let mut packet = PacketBuilder::new();
