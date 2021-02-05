@@ -1,10 +1,10 @@
 use super::super::traits::AppendBytes;
 
 #[derive(Debug)]
-pub struct Record<'a>(pub &'a[&'a str]);
+pub struct Record<'a>(pub &'a [&'a str]);
 
 impl<'a> Record<'a> {
-    pub const TYPE: usize =  16;
+    pub const TYPE: usize = 16;
 }
 
 impl AppendBytes for Record<'_> {

@@ -1,5 +1,5 @@
-use super::super::{append_qname, append_u16};
 use super::super::traits::AppendBytes;
+use super::super::{append_qname, append_u16};
 
 #[derive(Debug)]
 pub struct Record<'a> {
@@ -10,7 +10,7 @@ pub struct Record<'a> {
 }
 
 impl<'a> Record<'a> {
-    pub const TYPE: usize =  33;
+    pub const TYPE: usize = 33;
 }
 
 impl AppendBytes for Record<'_> {

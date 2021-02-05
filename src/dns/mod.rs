@@ -1,13 +1,13 @@
-mod rdata;
 mod header;
+mod packet;
+mod rdata;
 mod resource_record;
 mod traits;
-mod packet;
 
-use std::time::Duration;
-pub use resource_record::{ResourceRecord, RData};
-pub use packet::{PacketBuilder, QueryType, QueryClass};
 pub use dns_parser::Class;
+pub use packet::{PacketBuilder, QueryClass, QueryType};
+pub use resource_record::{RData, ResourceRecord};
+use std::time::Duration;
 
 fn append_u16(out: &mut Vec<u8>, value: u16) {
     out.push(((value >> 8) & 0xff) as u8);

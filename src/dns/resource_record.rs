@@ -1,14 +1,14 @@
-use std::time::Duration;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::time::Duration;
 
 use super::rdata::a::Record as A;
 use super::rdata::aaaa::Record as AAAA;
 use super::rdata::ptr::Record as Ptr;
 use super::rdata::srv::Record as Srv;
 use super::rdata::txt::Record as Txt;
-use super::{ append_u32, append_qname, append_u16, duration_to_secs };
-use dns_parser::Class;
 use super::traits::AppendBytes;
+use super::{append_qname, append_u16, append_u32, duration_to_secs};
+use dns_parser::Class;
 
 #[derive(Debug)]
 pub struct ResourceRecord<'a> {
@@ -35,7 +35,12 @@ macro_rules! create_class_fn {
 
 impl<'a> ResourceRecord<'a> {
     pub fn new(name: &'a str, ttl: Duration, class: Class, data: RData<'a>) -> Self {
-        Self { name, ttl, class, data }
+        Self {
+            name,
+            ttl,
+            class,
+            data,
+        }
     }
 
     create_class_fn!(IN);
@@ -92,11 +97,16 @@ impl<'a> RData<'a> {
     }
 
     pub fn srv(port: u16, priority: u16, weight: u16, target: &'a str) -> Self {
-        Self::SRV(Srv { port, weight, priority, target})
+        Self::SRV(Srv {
+            port,
+            weight,
+            priority,
+            target,
+        })
     }
 
-    pub fn txt(txt: &'a [ &'a str]) -> Self {
-        Self::TXT(Txt (txt))
+    pub fn txt(txt: &'a [&'a str]) -> Self {
+        Self::TXT(Txt(txt))
     }
 }
 

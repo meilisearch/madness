@@ -9,10 +9,10 @@ use crate::dns;
 use crate::error::Error;
 use crate::META_QUERY_SERVICE;
 
+use super::dns::{QueryClass, QueryType};
 use once_cell::sync::Lazy;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
-use super::dns::{QueryType, QueryClass};
 
 static IPV4_MDNS_MULTICAST_ADDRESS: Lazy<SocketAddr> =
     Lazy::new(|| SocketAddr::from((Ipv4Addr::new(224, 0, 0, 251), 5353)));
@@ -66,21 +66,17 @@ impl ServiceDiscovery {
 
 macro_rules! send_packets {
     ($self:ident, $socket:ident, $addr:expr, $to_send:ident) => {
-        match $self
-            .$socket
-            .send_to(&$to_send, $addr)
-            .await
-            {
-                Ok(bytes_written) => {
-                    debug_assert_eq!(bytes_written, $to_send.len());
-                }
-                Err(_) => {
-                    // Errors are non-fatal because they can happen for example if we lose
-                    // connection to the network.
-                    $self.send_buffers.clear();
-                    break;
-                }
+        match $self.$socket.send_to(&$to_send, $addr).await {
+            Ok(bytes_written) => {
+                debug_assert_eq!(bytes_written, $to_send.len());
             }
+            Err(_) => {
+                // Errors are non-fatal because they can happen for example if we lose
+                // connection to the network.
+                $self.send_buffers.clear();
+                break;
+            }
+        }
     };
 }
 
@@ -97,7 +93,7 @@ impl MdnsService {
         fn platform_specific(_: &net2::UdpBuilder) -> io::Result<()> {
             Ok(())
         }
-        
+
         // setup ipv4 socket
         let std_socket_v4 = {
             let builder = net2::UdpBuilder::new_v4()?;
@@ -123,10 +119,12 @@ impl MdnsService {
         socket_v6.set_multicast_loop_v6(loopback)?;
         socket_v6.join_multicast_v6(&FromStr::from_str("FF02::FB").unwrap(), 0)?;
 
-        let query_socket = tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind(&[
+        let query_socket = tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind(
+            &[
                 SocketAddr::from((Ipv4Addr::from([0u8, 0, 0, 0]), 0u16)),
-                SocketAddr::from((Ipv6Addr::from_str("::").unwrap(), 0u16))
-        ][..])?)?;
+                SocketAddr::from((Ipv6Addr::from_str("::").unwrap(), 0u16)),
+            ][..],
+        )?)?;
 
         let (tx, rx) = mpsc::channel(100);
 
@@ -194,12 +192,17 @@ impl MdnsService {
 
         while !self.query_send_buffers.is_empty() {
             let to_send = self.query_send_buffers.remove(0);
-            send_packets!(self, query_socket, &[*IPV4_MDNS_MULTICAST_ADDRESS, *IPV6_MDNS_MULTICAST_ADDRESS][..], to_send);
+            send_packets!(
+                self,
+                query_socket,
+                &[*IPV4_MDNS_MULTICAST_ADDRESS, *IPV6_MDNS_MULTICAST_ADDRESS][..],
+                to_send
+            );
         }
     }
 
     pub async fn next(&mut self) -> Packet {
-        loop{
+        loop {
             self.send_buffers().await;
 
             tokio::select! {
@@ -249,7 +252,7 @@ impl MdnsService {
                         None
                     }
                 })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
             Ok(Packet::Query(queries))
         } else {
             Ok(Packet::Response(mdns::Response::from_packet(&packet)))
