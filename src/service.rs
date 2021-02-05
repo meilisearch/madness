@@ -163,7 +163,7 @@ impl MdnsService {
     ) -> ServiceDiscovery {
         let (otx, mut orx) = oneshot::channel();
         let mut interval = time::interval(interval);
-        let mut sender = self.discovery_scheduler_snd.clone();
+        let sender = self.discovery_scheduler_snd.clone();
         let service = service_name.as_ref().to_string();
         tokio::spawn(async move {
             loop {
