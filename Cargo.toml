@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["mpostma <postma.marin@protonmail.com>"]
 edition = "2018"
 keywords = ["mdns", "service-discovery", "network"]
-repository = "https://github.com/MarinPostma/madness"
+repository = "https://github.com/meilisearch/madness"
 description = "A mDNS server/client based on tokio"
 license-file = "LICENSE"
 
